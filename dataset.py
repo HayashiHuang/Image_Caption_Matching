@@ -16,6 +16,7 @@ class TrainDataset(Dataset):
         caption = [self.vocab_table.preprocess(cap) for cap in self.caption[index]]
         caption = self.vocab_table.pad(caption)
         caption = self.vocab_table.numericalize(caption)
+        
         label = self.label[index]
 
         img_path = os.path.join(self.img_dir, self.img_idx[label] + '.jpg')
