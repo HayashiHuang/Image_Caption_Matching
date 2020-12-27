@@ -11,7 +11,7 @@ def train_collate_fn(data):
     img_data = [img_cap[0] for img_cap in data]
     img_data = torch.stack(img_data)
     cap_data = [img_cap[1] for img_cap in data]
-    cap_data.sort(key=lambda x: len(x))
+    #cap_data.sort(key=lambda x: x.shape[0])
     cap_data = rnn_utils.pad_sequence(cap_data, batch_first=True, padding_value=1)
     return img_data, cap_data.transpose(1, 2)
 
@@ -19,7 +19,7 @@ def test_collate_fn(data):
     if len(data[0]) == 2:
         cap_data = [cap[0] for cap in data]
         label_data = [cap[1] for cap in data]
-        cap_data.sort(key=lambda x: len(x))
+        #cap_data.sort(key=lambda x: len(x))
         cap_data = rnn_utils.pad_sequence(cap_data, batch_first=True, padding_value=1)
         cap_data = cap_data.view(cap_data.shape[0], cap_data.shape[1])
         return cap_data, torch.tensor(label_data)
