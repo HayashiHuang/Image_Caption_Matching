@@ -10,27 +10,41 @@ def compute_pn_mask(label):
     neg_mask = neg_mask - pos_mask
     return pos_mask, neg_mask
 
-def comput_hard_triplet(feat, label, margin=0.2):
+def comput_hard_triplet(feat, label, epoch, margin=0.8):
     pos_mask, neg_mask = compute_pn_mask(label)
 
-    feat_norm = (feat*feat).sum(dim=1).view(feat.shape[0], 1)
+    feat_norm = abs(feat).sum(dim=1).view(feat.shape[0], 1)
     feat = feat / feat_norm
     
     feat_row = feat.view(feat.shape[0], 1, -1)  
     feat_col = feat.view(1, feat.shape[0], -1)
     feat_row = feat_row.repeat(1, feat.shape[0], 1) 
     feat_col = feat_col.repeat(feat.shape[0], 1, 1)  
-    feat_dist = (feat_row - feat_col) * (feat_row - feat_col) 
+    #feat_dist = (feat_row - feat_col) * (feat_row - feat_col) 
+    feat_dist = abs(feat_row - feat_col)
     feat_dist = feat_dist.sum(dim=2)
     
     pos_dist = feat_dist * pos_mask
     neg_dist = feat_dist * neg_mask
-    pos_hard = pos_dist.max(dim=1)[0]
-    neg_hard = (neg_dist + 1).min(dim=1)[0] - 1
+
+    if epoch < 5:
+        pos_hard = pos_dist.sum(dim=1) / pos_mask.sum(dim=1)
+        neg_hard = neg_dist.sum(dim=1) / neg_mask.sum(dim=1)
+    elif epoch < 10:
+        pos_hard = pos_dist.max(dim=1)[0]
+        neg_hard = neg_dist.sum(dim=1) / neg_mask.sum(dim=1)
+    else:
+        pos_hard = pos_dist.max(dim=1)[0]
+        neg_hard = (neg_dist + (1 - neg_mask.cuda())).min(dim=1)[0]
+    # pos_hard = pos_dist.max(dim=1)[0]
+    # neg_hard = (neg_dist + (1 - neg_mask.cuda())).min(dim=1)[0]
+    mask = (neg_hard > pos_hard).float()
     
     y_predict = torch.topk(feat_dist + torch.eye(feat.shape[0]).cuda(), dim=1, k=1, largest=False)[1]
     y_predict = label[y_predict]
-    acc = (y_predict.view(-1)==label).float().mean()
-    loss = torch.clamp(pos_hard - neg_hard + margin, min=0).mean()
+
+    acc = (y_predict.view(-1) == label).float().mean()
+    loss = (torch.clamp(pos_hard - neg_hard + margin, min=0)).mean() - mask.mean()
+
     
     return loss, acc
