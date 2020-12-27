@@ -9,7 +9,7 @@ class Trainer:
     def __init__(self, data_loader, model, optimizer, args, mode):
         assert mode in ['text', 'mix'], "mode must be one of 'text' and 'mix'."
         self.mode = mode
-        #self.device = torch.device('cuda:{}'.format(args.gpu_id) if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:{}'.format(args.gpu_id) if torch.cuda.is_available() else 'cpu')
         self.data_loader = data_loader
         self.model = model
         self.optimizer = optimizer
@@ -33,6 +33,9 @@ class Trainer:
 
         # learning policy
         self.lr = args.lr
+        self.warm_up_epoch = args.warm_up_epoch
+        self.init_lr = args.init_lr
+        self.decay_factor = args.decay_factor
         self.runtime = {
             'batch': 0,
             'batch_loss': np.zeros(self.max_batch),
@@ -40,6 +43,13 @@ class Trainer:
             "start_time": 0.1,
             "time_cost": 0.1
         }
+        # reset learning rate to init_lr if warm-up is set
+        if self.warm_up_epoch > 0:
+            self.lr_step = (self.lr - self.init_lr) / self.warm_up_epoch
+            self.lr = self.init_lr
+            optim_state = self.optimizer.state_dict()
+            optim_state["param_groups"][0]["lr"] = self.lr
+            self.optimizer.load_state_dict(optim_state)
 
     def _print_batch_info(self):
         # epoch and batch
@@ -56,12 +66,24 @@ class Trainer:
         time_left = (batch_num - batch) * time_per_batch
 
         info = 'Epoch %d/%d, batch %d/%d: ' % (epoch, epoch_num, batch, batch_num)
-        info += 'cur_loss=%5.6f, avg_loss=%5.6f' % (cur_loss, avg_loss)
+        info += 'lr={:.6f}'.format(self.lr)
+        info += ', cur_loss=%5.6f, avg_loss=%5.6f' % (cur_loss, avg_loss)
         info +=', accuracy={:.4f}'.format(self.runtime['accuracy'])
         info += '%7.3fs/batch, %4.0fs remaining.' % (time_per_batch, time_left)
         
 
         print('\r' + info, end='')
+
+    def _adjust_lr(self):
+        if self.warm_up_epoch <= 0:
+            return
+        if self.cur_epoch <= self.warm_up_epoch:
+            self.lr += self.lr_step
+        else:
+            self.lr *= self.decay_factor
+        optim_state = self.optimizer.state_dict()
+        optim_state["param_groups"][0]["lr"] = self.lr
+        self.optimizer.load_state_dict(optim_state)
 
     def _run_one_epoch(self):
         self.runtime['start_time'] = time.time()
@@ -73,7 +95,7 @@ class Trainer:
             X_cap = caption.cuda().long()
             X_img = img.cuda().float()
             Y_train = self.model([X_img, X_cap], self.mode)
-            batch_loss, accuracy = self.single_model.loss(self.mode)
+            batch_loss, accuracy = self.single_model.loss(self.mode, self.cur_epoch)
             self.runtime['batch_loss'][idx] = batch_loss.item()
             self.runtime['accuracy'] = accuracy
             self.optimizer.zero_grad()
@@ -105,6 +127,7 @@ class Trainer:
             self.cur_epoch = epoch + 1
             self.model.train()
             self.epoch_loss[epoch] = self._run_one_epoch()
+            self._adjust_lr()
         self._save_model()
         self._save_loss()
         time_cost = time.time() - start_time
