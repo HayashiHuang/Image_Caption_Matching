@@ -30,7 +30,7 @@ if __name__ == '__main__':
                         help='size of output feature(default: 1)')
     parser.add_argument('--epoch', type=int, default=120,
                         help='training epoch(default: 10)')
-    parser.add_argument('--text_epoch', type=str, default=40,
+    parser.add_argument('--text_epoch', type=str, default=20,
                         help='text model training epoch(default: 5)')
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
@@ -63,7 +63,8 @@ if __name__ == '__main__':
     #optimizer = NovoGrad(model.parameters(), lr=args.lr)
 
     print('===== TRAIN =====')
-    text_trainer = Trainer(train_loader, model, optimizer, args, mode='text')
+    data_loader = [train_loader, val_caption_loader]
+    text_trainer = Trainer(data_loader, model, optimizer, args, mode='text')
     model = text_trainer.train()
-    mix_trainer = Trainer(train_loader, model, optimizer, args, mode='mix')
+    mix_trainer = Trainer(data_loader, model, optimizer, args, mode='mix')
     mix_trainer.train()
