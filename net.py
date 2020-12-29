@@ -2,14 +2,15 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torchvision import models
-from loss import comput_hard_triplet
+from loss import compute_hard_triplet, compute_img_loss
 from text_preprocess import flatten
 import pdb
 
 
 class ImNet(models.ResNet):
-    def __init__(self):
+    def __init__(self, args):
         super().__init__(block=models.resnet.Bottleneck, layers=[3, 4, 6, 3])
+        self.fc = nn.Linear(2048, args.feat_dim)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -24,6 +25,7 @@ class ImNet(models.ResNet):
 
         x = self.avgpool(x)
         y = x.view(x.size(0), -1)
+        y = self.fc(y)
         return y
 
 
@@ -57,7 +59,7 @@ class TxNet(nn.Module):
 class Net(nn.Module):
     def __init__(self, args, vocab):
         super().__init__()
-        self.ImNet = ImNet()
+        self.ImNet = ImNet(args=args)
         self.TxNet = TxNet(args=args, vocab=vocab)
 
     def forward(self, x, mode):
@@ -70,6 +72,7 @@ class Net(nn.Module):
         else:
             X_cap = X_cap.view(-1, X_cap.shape[2])
             y_cap, label = self.TxNet(X_cap)
+            self.label = label
             y_img = self.ImNet(X_img)
             y = [y_cap, y_img]
         self.y = y
@@ -78,7 +81,10 @@ class Net(nn.Module):
     def loss(self, mode, epoch):
         # TODO: loss function
         if mode == 'text':
-            loss, acc = comput_hard_triplet(self.y, self.label, epoch)
+            loss, acc = compute_hard_triplet(self.y, self.label, epoch)
+            return loss, acc
         else:
-            loss = self.y[0][0, 0, 1] - self.y[0][0, 0, 0]
-        return loss, acc
+            img_loss, img_acc = compute_img_loss(self.y[0], self.label, self.y[1], epoch)
+            text_loss, text_acc = compute_hard_triplet(self.y[0], self.label, epoch)
+            return img_loss, img_acc, text_loss, text_acc
+        
